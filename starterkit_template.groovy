@@ -37,22 +37,6 @@ def createJob(jobName, upstreamJobName, jobSettings, codeBranch, buildSteps) {
         steps {
             shell(buildSteps.join('\n'))
         }
-        publishers {
-            extendedEmail {
-                recipientList(jobSettings['mailGroup'])
-                defaultSubject('$DEFAULT_SUBJECT')
-                defaultContent('$DEFAULT_CONTENT')
-                contentType('default')
-                triggers {
-                    always {
-                        sendTo {
-                            developers()
-                            recipientList()
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -85,28 +69,6 @@ def createOpbuildJob(jobName, upstreamJobName, jobSettings, testBranch) {
                 "npm run opse2e -- mergeE2eTestData --sourceBranch master --targetBranch ${contentBranch}",
                 "npm run opse2e -- publishE2eTestData --buildEndpoint ${opbuildEndpoint} --buildBranch ${contentBranch}"
                 ].join('\n'))
-        }
-        publishers {
-            extendedEmail {
-                recipientList(jobSettings['mailGroup'])
-                defaultSubject('$DEFAULT_SUBJECT')
-                defaultContent('$DEFAULT_CONTENT')
-                contentType('default')
-                triggers {
-                    failure {
-                        sendTo {
-                            developers()
-                            recipientList()
-                        }
-                    }
-                    fixed {
-                        sendTo {
-                            developers()
-                            recipientList()
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -166,33 +128,6 @@ def createE2eJob(jobName, upstreamJobName, jobSettings, testBranch) {
         publishers {
             archiveArtifacts {
                 pattern("${repoName}/result/e2e/screenshots/**/*.*") // Archive E2E test results
-            }
-            postBuildScripts {
-                onlyIfBuildSucceeds(false)
-                steps {
-                    batchFile('START taskkill /f /im chrome.exe \n' +
-                              'START taskkill /f /im chromedriver.exe')
-                }
-            }
-            extendedEmail {
-                recipientList(jobSettings['mailGroup'])
-                defaultSubject('$DEFAULT_SUBJECT')
-                defaultContent('$DEFAULT_CONTENT')
-                contentType('default')
-                triggers {
-                    failure {
-                        sendTo {
-                            developers()
-                            recipientList()
-                        }
-                    }
-                    fixed {
-                        sendTo {
-                            developers()
-                            recipientList()
-                        }
-                    }
-                }
             }
         }
     }
