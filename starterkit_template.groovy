@@ -7,6 +7,7 @@ def settings = new JsonSlurper().parseText(jsonPayloadJobs)
 def parseRepoName(repoUrl) {
     def parts = repoUrl.split(/[\/\\]/)
     def repoName = parts[-1]
+    repoName = repoName.replaceAll(/\./, '_')
     return repoName
 }
 
