@@ -133,7 +133,9 @@ def createE2eJob(jobName, upstreamJobName, jobSettings, testBranch) {
                     credentials(jobSettings['credentialId'])
                 }
                 branch(e2eSettings['sourceBranch'])
-                relativeTargetDir(commonE2eRepoName)
+                extensions {
+                    relativeTargetDirectory(commonE2eRepoName)
+                }
             }
             git {
                 remote {
@@ -141,7 +143,9 @@ def createE2eJob(jobName, upstreamJobName, jobSettings, testBranch) {
                     credentials(jobSettings['credentialId'])
                 }
                 branch(e2eSettings['sourceBranch'])
-                relativeTargetDir(repoName)
+                extensions {
+                    relativeTargetDirectory(repoName)
+                }
             }
         }
         steps {
