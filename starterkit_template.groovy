@@ -10,7 +10,9 @@ def parseRepoName(repoUrl) {
     return repoName
 }
 
-def createJob(jobName, upstreamJobName, jobSettings, codeBranch, buildSteps) {
+def createJob(jobName, upstreamJobName, jobSettings, modelbranch) {
+    def branchSettings = jobSettings['branchMapping'][modelbranch]
+    def sourceBranch = branchSettings['sourceBranch'] ? branchSettings['sourceBranch'] : modelbranch
     job(jobName) {
         label(jobSettings['labelExpression'])
         logRotator { // Discard old builds
@@ -24,34 +26,6 @@ def createJob(jobName, upstreamJobName, jobSettings, codeBranch, buildSteps) {
                 upstream(upstreamJobName, 'SUCCESS')
             }
         }
-        scm {
-            git {
-                remote {
-                    url(jobSettings['repoUrl'])
-                    credentials(jobSettings['credentialId'])
-                }
-                branch(codeBranch)
-            }
-        }
-        steps {
-            shell(buildSteps.join('\n'))
-        }
-    }
-}
-
-def createE2eJob(jobName, upstreamJobName, jobSettings, testBranch) {
-    def e2eSettings = jobSettings['branchMapping'][testBranch]
-    job(jobName) {
-        label(jobSettings['labelExpression'])
-        logRotator { // Discard old builds
-            daysToKeep(14) // If specified, build records are only kept up to this number of days.
-            numToKeep(40) // If specified, only up to this number of build records are kept.
-            artifactDaysToKeep(14) // If specified, artifacts from builds older than this number of days will be deleted, but the logs, history, reports, etc for the build will be kept.
-            artifactNumToKeep(40) // If specified, only up to this number of builds have their artifacts retained.
-        }
-        triggers {
-            upstream(upstreamJobName, 'SUCCESS')
-        }
         if (jobSettings['repoUrl'].class == String) {
             scm {
                 git {
@@ -59,18 +33,22 @@ def createE2eJob(jobName, upstreamJobName, jobSettings, testBranch) {
                         url(jobSettings['repoUrl'])
                         credentials(jobSettings['credentialId'])
                     }
-                    branch(e2eSettings['sourceBranch'])
+                    branch(sourceBranch)
                 }
             }
         } else {
             multiscm {
-                jobSettings['repoUrl'].each { repoUrl ->
+                jobSettings['repoUrl'].eachWithIndex { repoUrl, index ->
                     git {
                         remote {
                             url(repoUrl)
                             credentials(jobSettings['credentialId'])
                         }
-                        branch(e2eSettings['sourceBranch'])
+                        if (sourceBranch.class == String) {
+                            branch(sourceBranch)
+                        } else {
+                            branch(sourceBranch[index])
+                        }
                         extensions {
                             relativeTargetDirectory(parseRepoName(repoUrl))
                         }
@@ -79,19 +57,19 @@ def createE2eJob(jobName, upstreamJobName, jobSettings, testBranch) {
             }
         }
         steps {
-            shell(e2eSettings['buildSteps'].join('\n'))
+            shell(branchSettings['buildSteps'].join('\n'))
         }
-        if (e2eSettings['archiveArtifacts']) {
-            publishers {
+        publishers {
+            if (branchSettings['archiveArtifacts']) {
                 archiveArtifacts {
-                    pattern(e2eSettings['archiveArtifacts']) // Archive E2E test results
+                    pattern(branchSettings['archiveArtifacts']) // Archive E2E test results
                 }
             }
         }
     }
 }
 
-def createMergeJob(jobName, upstreamJobName, jobSettings, codeBranch, mergeTo) {
+def createMergeJob(jobName, upstreamJobName, jobSettings, sourceBranch, mergeTo) {
     def repoName = parseRepoName(jobSettings['repoUrl'])
     job(jobName) {
         label(jobSettings['labelExpression'])
@@ -113,7 +91,7 @@ def createMergeJob(jobName, upstreamJobName, jobSettings, codeBranch, mergeTo) {
                     url(jobSettings['repoUrl'])
                     credentials(jobSettings['credentialId'])
                 }
-                branch(codeBranch)
+                branch(sourceBranch)
                 extensions {
                     mergeOptions {
                         branch(mergeTo) // Sets the name of the branch to merge.
@@ -151,42 +129,44 @@ def execute(settings) {
         def mergeJobName = folderName + '/' + it + '_merge'
         def versionJobName = folderName + '/' + it + '_bump_version'
 
-        def ciBranchMapping = settings['ci']['branchMapping']
-        def opbuildBranchMapping = settings['opbuild']['branchMapping']
         switch (it) {
             case "develop":
                 // create ci job
-                createJob(ciJobName, null, settings['ci'], it, ciBranchMapping[it]['buildSteps'])
+                createJob(ciJobName, null, settings['ci'], it)
                 // create opbuild job
-                createJob(opbuildJobName, it + '_ci', settings['opbuild'], it, opbuildBranchMapping[it]['buildSteps'])
+                createJob(opbuildJobName, it + '_ci', settings['opbuild'], it)
                 // create e2e job
-                createE2eJob(e2eJobName, it + '_opbuild', settings['e2e'], it)
+                createJob(e2eJobName, it + '_opbuild', settings['e2e'], it)
                 // create merge job
                 createMergeJob(mergeJobName, it + '_e2e', settings['ci'], it, mergeMapping[it])
                 break
             case "release":
                 // create ci job
-                createJob(ciJobName, null, settings['ci'], it, ciBranchMapping[it]['buildSteps'])
+                createJob(ciJobName, null, settings['ci'], it)
                 // create opbuild job
-                createJob(opbuildJobName, it + '_ci', settings['opbuild'], it, opbuildBranchMapping[it]['buildSteps'])
+                createJob(opbuildJobName, it + '_ci', settings['opbuild'], it)
                 // create e2e job
-                createE2eJob(e2eJobName, it + '_opbuild', settings['e2e'], it)
+                createJob(e2eJobName, it + '_opbuild', settings['e2e'], it)
                 // create bumpVersion job
-                createJob(versionJobName, null, settings['ci'], it, ciBranchMapping[it]['bumpVersionSteps'])
+                if (settings['bumpVersion'] && settings['bumpVersion']['branchMapping'][it]) {
+                    createJob(versionJobName, null, settings['bumpVersion'], it)
+                }
                 break
             case "hotfix":
                 // create ci job
-                createJob(ciJobName, null, settings['ci'], it, ciBranchMapping[it]['buildSteps'])
+                createJob(ciJobName, null, settings['ci'], it)
                 // create opbuild job
-                createJob(opbuildJobName, it + '_ci', settings['opbuild'], it, opbuildBranchMapping[it]['buildSteps'])
+                createJob(opbuildJobName, it + '_ci', settings['opbuild'], it)
                 // create e2e job
-                createE2eJob(e2eJobName, it + '_opbuild', settings['e2e'], it)
+                createJob(e2eJobName, it + '_opbuild', settings['e2e'], it)
                 // create bumpVersion job
-                createJob(versionJobName, null, settings['ci'], it, ciBranchMapping[it]['bumpVersionSteps'])
+                if (settings['bumpVersion'] && settings['bumpVersion']['branchMapping'][it]) {
+                    createJob(versionJobName, null, settings['bumpVersion'], it)
+                }
                 break
             case "master":
                 // create ci job
-                createJob(ciJobName, null, settings['ci'], it, ciBranchMapping[it]['buildSteps'])
+                createJob(ciJobName, null, settings['ci'], it)
                 // create master_mergeTo_develop & master_mergeTo_hotfix jobs
                 createMergeJob(mergeJobName + 'To_develop', null, settings['ci'], it, 'develop')
                 createMergeJob(mergeJobName + 'To_hotfix', null, settings['ci'], it, 'hotfix')
