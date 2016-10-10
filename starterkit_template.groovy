@@ -65,6 +65,20 @@ def createJob(jobName, upstreamJobName, jobSettings, modelbranch) {
                     pattern(branchSettings['archiveArtifacts']) // Archive E2E test results
                 }
             }
+            extendedEmail {
+                recipientList(jobSettings['mailGroup'])
+                defaultSubject('$DEFAULT_SUBJECT')
+                defaultContent('$DEFAULT_CONTENT')
+                contentType('default')
+                triggers {
+                    always {
+                        sendTo {
+                            developers()
+                            recipientList()
+                        }
+                    }
+                }
+            }
         }
     }
 }
